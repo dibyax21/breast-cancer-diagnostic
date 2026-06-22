@@ -1,0 +1,410 @@
+import json
+
+notebook = {
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Breast Cancer Diagnostic Project\n",
+    "This notebook trains a Machine Learning (Random Forest) model and a Deep Learning (Neural Network) model on the Breast Cancer Wisconsin dataset, performs evaluations, plots feature importances, and deploys a polished, medical-grade web frontend using the Gradio library."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import matplotlib.pyplot as plt\n",
+    "import seaborn as sns\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.preprocessing import StandardScaler\n",
+    "from sklearn.ensemble import RandomForestClassifier\n",
+    "from sklearn.metrics import accuracy_score, classification_report\n",
+    "\n",
+    "# Try to import TensorFlow for the DL part, fall back to scikit-learn's MLPClassifier if it fails\n",
+    "try:\n",
+    "    import tensorflow as tf\n",
+    "    from tensorflow.keras.models import Sequential\n",
+    "    from tensorflow.keras.layers import Dense, Dropout\n",
+    "    USE_TF = True\n",
+    "    print(\"✅ TensorFlow imported successfully!\")\n",
+    "except Exception as e:\n",
+    "    print(f\"⚠️ TensorFlow loading failed: {e}\")\n",
+    "    print(\"🔄 Falling back to scikit-learn MLPClassifier (Neural Network)...\")\n",
+    "    from sklearn.neural_network import MLPClassifier\n",
+    "    USE_TF = False"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 1. Fetch Real Data Directly from URL\n",
+    "url = \"https://raw.githubusercontent.com/jbrownlee/Datasets/master/breast-cancer-wisconsin.csv\"\n",
+    "\n",
+    "# This dataset doesn't have headers in its raw file, so we define them manually\n",
+    "# Note: The raw CSV from this URL does not contain the 'sample_id' column.\n",
+    "column_names = [\n",
+    "    \"clump_thickness\", \"uniformity_cell_size\", \"uniformity_cell_shape\",\n",
+    "    \"marginal_adhesion\", \"single_epithelial_cell_size\", \"bare_nuclei\", \n",
+    "    \"bland_chromatin\", \"normal_nucleoli\", \"mitoses\", \"class\"\n",
+    "]\n",
+    "\n",
+    "df = pd.read_csv(url, names=column_names)\n",
+    "print(f\"📊 Real dataset loaded successfully! Shape: {df.shape}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 2. Data Cleaning (Handling real-world missing values denoted by '?')\n",
+    "df.replace('?', np.nan, inplace=True)\n",
+    "df.dropna(inplace=True) # Drop the rows with missing values\n",
+    "df['bare_nuclei'] = df['bare_nuclei'].astype(int) # Convert column to integer\n",
+    "\n",
+    "# Map target: Original dataset uses 2 for Benign and 4 for Malignant. Let's make it 0 and 1.\n",
+    "df['class'] = df['class'].map({2: 0, 4: 1})\n",
+    "\n",
+    "# Drop target column to get features\n",
+    "X = df.drop(columns=['class'])\n",
+    "y = df['class']"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 3. Train-Test Split & Normalization\n",
+    "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n",
+    "\n",
+    "scaler = StandardScaler()\n",
+    "X_train_scaled = scaler.fit_transform(X_train)\n",
+    "X_test_scaled = scaler.transform(X_test)\n",
+    "\n",
+    "print(\"✂️ Data processed and split into Train/Test sets.\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Part A: Machine Learning (Random Forest)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"🤖 Training Machine Learning Model (Random Forest)...\")\n",
+    "ml_model = RandomForestClassifier(n_estimators=100, random_state=42)\n",
+    "ml_model.fit(X_train_scaled, y_train)\n",
+    "\n",
+    "ml_preds = ml_model.predict(X_test_scaled)\n",
+    "ml_acc = accuracy_score(y_test, ml_preds)\n",
+    "print(f\"🌲 ML Random Forest Accuracy: {ml_acc * 100:.2f}%\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Part B: Deep Learning (Neural Network)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"💥 Training Deep Learning Model (Neural Network)...\")\n",
+    "\n",
+    "if USE_TF:\n",
+    "    # Build the structure of Neural Network using Keras\n",
+    "    dl_model = Sequential([\n",
+    "        Dense(32, activation='relu', input_shape=(X_train_scaled.shape[1],)),\n",
+    "        Dropout(0.2), # Prevents overfitting\n",
+    "        Dense(16, activation='relu'),\n",
+    "        Dense(1, activation='sigmoid') # Binary output layer (0 or 1)\n",
+    "    ])\n",
+    "\n",
+    "    # Compile the Neural Network\n",
+    "    dl_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])\n",
+    "\n",
+    "    # Train the Neural Network\n",
+    "    history = dl_model.fit(\n",
+    "        X_train_scaled, y_train, \n",
+    "        validation_split=0.1, \n",
+    "        epochs=25, \n",
+    "        batch_size=16, \n",
+    "        verbose=0 # Suppress long epoch log outputs\n",
+    "    )\n",
+    "\n",
+    "    # Evaluate Deep Learning Model\n",
+    "    dl_loss, dl_acc = dl_model.evaluate(X_test_scaled, y_test, verbose=0)\n",
+    "else:\n",
+    "    # Train using scikit-learn MLPClassifier (Multi-Layer Perceptron)\n",
+    "    dl_model = MLPClassifier(\n",
+    "        hidden_layer_sizes=(32, 16),\n",
+    "        activation='relu',\n",
+    "        solver='adam',\n",
+    "        max_iter=500,\n",
+    "        batch_size=16,\n",
+    "        random_state=42\n",
+    "    )\n",
+    "    dl_model.fit(X_train_scaled, y_train)\n",
+    "    dl_preds = dl_model.predict(X_test_scaled)\n",
+    "    dl_acc = accuracy_score(y_test, dl_preds)\n",
+    "\n",
+    "print(f\"🧠 DL Neural Network Accuracy: {dl_acc * 100:.2f}%\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Part C: Comparison Visualization"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"📊 Generating Project Comparison Metrics...\")\n",
+    "\n",
+    "plt.figure(figsize=(6, 4))\n",
+    "models = ['ML (Random Forest)', 'DL (Neural Network)']\n",
+    "accuracies = [ml_acc * 100, dl_acc * 100]\n",
+    "\n",
+    "sns.barplot(x=models, y=accuracies, hue=models, palette='Set2', legend=False)\n",
+    "plt.ylabel('Accuracy Score (%)')\n",
+    "plt.title('Performance Comparison: Machine Learning vs. Deep Learning')\n",
+    "for i, val in enumerate(accuracies):\n",
+    "    plt.text(i, val - 10, f\"{val:.2f}%\", ha='center', color='white', fontweight='bold')\n",
+    "plt.ylim(0, 110)\n",
+    "plt.tight_layout()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Evaluation Toolkit (ROC Curve & Confusion Matrix)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"📊 Generating ROC Curves & Confusion Matrix...\")\n",
+    "from sklearn.metrics import roc_curve, auc, confusion_matrix\n",
+    "\n",
+    "# Compute prediction probabilities\n",
+    "ml_probs = ml_model.predict_proba(X_test_scaled)[:, 1]\n",
+    "if USE_TF:\n",
+    "    dl_probs = dl_model.predict(X_test_scaled).ravel()\n",
+    "    dl_preds = (dl_probs >= 0.5).astype(int)\n",
+    "else:\n",
+    "    dl_probs = dl_model.predict_proba(X_test_scaled)[:, 1]\n",
+    "    dl_preds = dl_model.predict(X_test_scaled)\n",
+    "\n",
+    "# Compute ROC metrics\n",
+    "fpr_ml, tpr_ml, _ = roc_curve(y_test, ml_probs)\n",
+    "roc_auc_ml = auc(fpr_ml, tpr_ml)\n",
+    "\n",
+    "fpr_dl, tpr_dl, _ = roc_curve(y_test, dl_probs)\n",
+    "roc_auc_dl = auc(fpr_dl, tpr_dl)\n",
+    "\n",
+    "# Compute Confusion Matrix for DL\n",
+    "cm = confusion_matrix(y_test, dl_preds)\n",
+    "\n",
+    "# Plotting side-by-side\n",
+    "fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))\n",
+    "\n",
+    "# Left Subplot: ROC Curves\n",
+    "ax1.plot(fpr_ml, tpr_ml, color='darkorange', lw=2, label=f'Random Forest (AUC = {roc_auc_ml:.4f})')\n",
+    "ax1.plot(fpr_dl, tpr_dl, color='blue', lw=2, label=f'Neural Network (AUC = {roc_auc_dl:.4f})')\n",
+    "ax1.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')\n",
+    "ax1.set_xlim([0.0, 1.0])\n",
+    "ax1.set_ylim([0.0, 1.05])\n",
+    "ax1.set_xlabel('False Positive Rate')\n",
+    "ax1.set_ylabel('True Positive Rate')\n",
+    "ax1.set_title('Receiver Operating Characteristic (ROC) Comparison')\n",
+    "ax1.legend(loc=\"lower right\")\n",
+    "\n",
+    "# Right Subplot: Confusion Matrix\n",
+    "sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax2,\n",
+    "            xticklabels=['Benign', 'Malignant'],\n",
+    "            yticklabels=['Benign', 'Malignant'])\n",
+    "ax2.set_xlabel('Predicted Label')\n",
+    "ax2.set_ylabel('True Label')\n",
+    "ax2.set_title('Confusion Matrix: Deep Learning Model')\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Explainable AI (Feature Importance)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"🔍 Extracting Random Forest Feature Importances...\")\n",
+    "importances = ml_model.feature_importances_\n",
+    "indices = np.argsort(importances)\n",
+    "features = X.columns[indices]\n",
+    "sorted_importances = importances[indices]\n",
+    "\n",
+    "plt.figure(figsize=(8, 5))\n",
+    "plt.barh(features, sorted_importances, color='teal')\n",
+    "plt.xlabel('Relative Importance')\n",
+    "plt.title('Clinical Feature Importance (Random Forest Baseline)')\n",
+    "plt.tight_layout()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Polished, Medical-Grade Web Frontend (Gradio App)\n",
+    "Run this cell to launch the interactive, high-end Gradio web portal directly within the notebook."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "!pip install -q gradio\n",
+    "import gradio as gr\n",
+    "\n",
+    "def predict_cancer(clump_thickness, cell_size_uniformity, cell_shape_uniformity,\n",
+    "                   marginal_adhesion, epithelial_size, bare_nuclei,\n",
+    "                   bland_chromatin, normal_nucleoli, mitoses):\n",
+    "    # Combine inputs into DataFrame matching features\n",
+    "    input_df = pd.DataFrame([[\n",
+    "        clump_thickness, cell_size_uniformity, cell_shape_uniformity,\n",
+    "        marginal_adhesion, epithelial_size, bare_nuclei,\n",
+    "        bland_chromatin, normal_nucleoli, mitoses\n",
+    "    ]], columns=X.columns)\n",
+    "    \n",
+    "    # Scale input\n",
+    "    input_scaled = scaler.transform(input_df)\n",
+    "    \n",
+    "    # ML prediction\n",
+    "    ml_pred = ml_model.predict(input_scaled)[0]\n",
+    "    \n",
+    "    # DL prediction & probability\n",
+    "    if USE_TF:\n",
+    "        dl_prob = dl_model.predict(input_scaled)[0][0]\n",
+    "        dl_pred = int(dl_prob >= 0.5)\n",
+    "        dl_prob_pct = dl_prob * 100\n",
+    "    else:\n",
+    "        dl_prob = dl_model.predict_proba(input_scaled)[0][1]\n",
+    "        dl_pred = dl_model.predict(input_scaled)[0]\n",
+    "        dl_prob_pct = dl_prob * 100\n",
+    "\n",
+    "    # Format predictions\n",
+    "    if ml_pred == 1:\n",
+    "        ml_result = \"🚨 MALIGNANT (High Risk - Immediate Attention Required)\"\n",
+    "    else:\n",
+    "        ml_result = \"🟢 BENIGN (Low Risk - Safe)\"\n",
+    "        \n",
+    "    if dl_pred == 1:\n",
+    "        dl_result = f\"🚨 MALIGNANT (High Risk - Immediate Attention Required)\\n[Malignancy Probability: {dl_prob_pct:.2f}%]\"\n",
+    "    else:\n",
+    "        dl_result = f\"🟢 BENIGN (Low Risk - Safe)\\n[Malignancy Probability: {dl_prob_pct:.2f}%]\"\n",
+    "        \n",
+    "    return ml_result, dl_result\n",
+    "\n",
+    "# Create custom theme and interface layout\n",
+    "with gr.Blocks(theme=gr.themes.Soft()) as demo:\n",
+    "    gr.Markdown(\"# 🩺 AI-Driven Breast Cancer Diagnostic Portal\")\n",
+    "    gr.Markdown(\"Clinical decision-support tool utilizing parallel Machine Learning and Deep Neural Networks. Input cellular biopsy parameters below to generate diagnostic predictions.\")\n",
+    "    \n",
+    "    with gr.Row():\n",
+    "        with gr.Column(scale=1):\n",
+    "            gr.Markdown(\"### Cellular Biopsy Parameters\")\n",
+    "            clump_thickness = gr.Slider(1, 10, step=1, value=5, label=\"Clump Thickness\")\n",
+    "            cell_size_uniformity = gr.Slider(1, 10, step=1, value=5, label=\"Uniformity of Cell Size\")\n",
+    "            cell_shape_uniformity = gr.Slider(1, 10, step=1, value=5, label=\"Uniformity of Cell Shape\")\n",
+    "            marginal_adhesion = gr.Slider(1, 10, step=1, value=5, label=\"Marginal Adhesion\")\n",
+    "            epithelial_size = gr.Slider(1, 10, step=1, value=5, label=\"Single Epithelial Cell Size\")\n",
+    "            bare_nuclei = gr.Slider(1, 10, step=1, value=5, label=\"Bare Nuclei\")\n",
+    "            bland_chromatin = gr.Slider(1, 10, step=1, value=5, label=\"Bland Chromatin\")\n",
+    "            normal_nucleoli = gr.Slider(1, 10, step=1, value=5, label=\"Normal Nucleoli\")\n",
+    "            mitoses = gr.Slider(1, 10, step=1, value=5, label=\"Mitoses\")\n",
+    "            \n",
+    "            run_btn = gr.Button(\"Run Diagnostic Assessment\", variant=\"primary\")\n",
+    "            \n",
+    "        with gr.Column(scale=1):\n",
+    "            gr.Markdown(\"### Diagnostic Predictions\")\n",
+    "            ml_output = gr.Textbox(\n",
+    "                label=\"🌲 Traditional ML Baseline (Random Forest Result)\",\n",
+    "                interactive=False\n",
+    "            )\n",
+    "            dl_output = gr.Textbox(\n",
+    "                label=\"🧠 Deep Learning Predictive Insight (ANN Result)\",\n",
+    "                interactive=False\n",
+    "            )\n",
+    "            \n",
+    "    run_btn.click(\n",
+    "        fn=predict_cancer,\n",
+    "        inputs=[\n",
+    "            clump_thickness, cell_size_uniformity, cell_shape_uniformity,\n",
+    "            marginal_adhesion, epithelial_size, bare_nuclei,\n",
+    "            bland_chromatin, normal_nucleoli, mitoses\n",
+    "        ],\n",
+    "        outputs=[ml_output, dl_output]\n",
+    "    )\n",
+    "\n",
+    "demo.launch(share=True)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
+
+with open("breast_cancer_diagnostic.ipynb", "w", encoding="utf-8") as f:
+    json.dump(notebook, f, indent=1)
+
+print("Notebook generated successfully as breast_cancer_diagnostic.ipynb!")
